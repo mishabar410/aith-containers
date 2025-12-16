@@ -1,0 +1,71 @@
+version: '3.8'
+
+# Using a shared network for all services
+networks:
+  app_network:
+    driver: bridge
+
+# Using a named volume for shared data
+volumes:
+  shared_data:
+
+services:
+  # Service 1: Init Service (runs once and exits)
+  init_service:
+    image: alpine:latest
+    container_name: hw2_init_container
+    # Works in tandem with app using shared volume
+    volumes:
+      - shared_data:/app/data
+    # Writes message from env to shared file
+    command: /bin/sh -c "mkdir -p /app/data && echo $INIT_MESSAGE > /app/data/init_info.txt && echo 'Init complete'"
+    networks:
+      - app_network
+
+  # Service 2: Database Service
+  redis_db:
+    image: redis:alpine
+    container_name: hw2_redis_container
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    # Optional resource limits (for learning purpose)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 50M
+
+  # Service 3: Main Application Service
+  web_app:
+    # Automatic build from Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Assigning name to the built image
+    image: ${APP_IMAGE_NAME}:latest
+    container_name: hw2_app_container
+    depends_on:
+      redis_db:
+        condition: service_healthy
+      init_service:
+        condition: service_completed_successfully
+    volumes:
+      - shared_data:/app/data
+    ports:
+      - "${APP_PORT}:5000"
+    environment:
+      - REDIS_HOST=${REDIS_HOST}
+    command: ["python", "app.py"]
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
