@@ -2,11 +2,9 @@
 
 ## Описание
 
-В данной лабораторной работе развернут веб-сервис Nextcloud с использованием базы данных PostgreSQL в кластере Kubernetes (minikube).
 
 ### Выполненные модификации
 
-Согласно заданию, были внесены следующие изменения в исходные манифесты:
 
 1. **PostgreSQL**: Перенесены `POSTGRES_USER` и `POSTGRES_PASSWORD` из ConfigMap в Secret (`pg_secret.yml`)
 2. **Nextcloud**: Перенесены переменные окружения (`NEXTCLOUD_UPDATE`, `ALLOW_EMPTY_PASSWORD`, `NEXTCLOUD_TRUSTED_DOMAINS`, `NEXTCLOUD_ADMIN_USER`) из Deployment в ConfigMap (`nextcloud_configmap.yml`)
@@ -103,33 +101,12 @@ minikube dashboard --url
 **Да, порядок важен.**
 
 Причины:
-1. **Зависимости ресурсов**: Deployment ссылается на ConfigMap и Secret через `configMapRef` и `secretRef`. Если эти ресурсы не существуют на момент создания пода, он не сможет запуститься и перейдет в состояние ошибки (например, `CreateContainerConfigError`).
+Deployment ссылается на ConfigMap и Secret через `configMapRef` и `secretRef`. Если эти ресурсы не существуют на момент создания пода, он не сможет запуститься и перейдет в состояние ошибки (например, `CreateContainerConfigError`).
 
-2. **Service → Deployment**: Хотя Service можно создать до Deployment, логичнее сначала создать Deployment, чтобы Service сразу обнаружил целевые поды.
-
-3. **Nextcloud → PostgreSQL**: Nextcloud зависит от PostgreSQL. Если БД недоступна при запуске Nextcloud, сервис не сможет корректно инициализироваться.
-
-**Рекомендуемый порядок:**
-1. Secrets и ConfigMaps (нет внешних зависимостей)
-2. Services (для обеспечения DNS-резолвинга)
-3. Deployments (используют все вышеперечисленное)
 
 ### Вопрос 2: Что произойдет, если отскейлить postgres-deployment в 0, затем обратно в 1, и попробовать зайти на Nextcloud?
 
 **Произойдет потеря данных и возможные ошибки.**
-
-Подробнее:
-1. **Масштабирование в 0**: Под PostgreSQL удаляется вместе со всеми данными (т.к. используется ephemeral storage - данные хранятся внутри контейнера, а не в PersistentVolume).
-
-2. **Масштабирование обратно в 1**: Создается новый под PostgreSQL с чистой базой данных. Все таблицы и данные Nextcloud (пользователи, файлы, настройки) будут потеряны.
-
-3. **Попытка зайти на Nextcloud**: 
-   - Nextcloud не найдет свои таблицы в БД
-   - Возможно, запустится повторная инициализация
-   - Или появится ошибка подключения к БД
-   - Все ранее загруженные файлы и созданные пользователи будут потеряны
-
-**Решение**: Для production-среды необходимо использовать **PersistentVolume (PV)** и **PersistentVolumeClaim (PVC)** для хранения данных PostgreSQL вне жизненного цикла пода.
 
 ---
 
@@ -175,16 +152,3 @@ readinessProbe:
 
 ---
 
-## Удаление ресурсов
-
-```bash
-kubectl delete deployment nextcloud postgres
-kubectl delete service nextcloud postgres-service
-kubectl delete configmap nextcloud-configmap postgres-configmap
-kubectl delete secret nextcloud-secret postgres-secret
-```
-
-Или удалить всё через манифесты:
-```bash
-kubectl delete -f .
-```
