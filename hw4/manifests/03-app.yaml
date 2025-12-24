@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-app
+  namespace: hw4
+  labels:
+    app: python-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: python-app
+  template:
+    metadata:
+      labels:
+        app: python-app
+    spec:
+      volumes:
+      - name: data-volume
+        emptyDir: {}
+      initContainers:
+      - name: init-myservice
+        image: busybox
+        command: ['sh', '-c', "echo 'Hello from Init Container' > /data/init_info.txt"]
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+      containers:
+      - name: python-app
+        image: hw4-app:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5000
+        env:
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_HOST
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secret
+              key: REDIS_PASSWORD
+        volumeMounts:
+        - name: data-volume
+          mountPath: /app/data
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-app-service
+  namespace: hw4
+spec:
+  type: ClusterIP
+  selector:
+    app: python-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
